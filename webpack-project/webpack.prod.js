@@ -1,15 +1,50 @@
 "use strict";
 
+const glob = require("glob");
 const path = require("path");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const OptimizeCssAssetsPlugin = require("optimize-css-assets-webpack-plugin");
 const HTMLWebpackPlugin = require("html-webpack-plugin");
+const { CleanWebpackPlugin } = require("clean-webpack-plugin");
+// const HtmlWebpackExternalsPlugin = require("html-webpack-externals-plugin");
+
+const setMPA = () => {
+  const entry = {};
+  const htmlWebpackPlugins = [];
+
+  const entryFiles = glob.sync(path.join(__dirname, "./src/*/index.js"));
+
+  Object.keys(entryFiles).map(index => {
+    const entryFile = entryFiles[index];
+    const match = entryFile.match("src/(.*)/index.js");
+    const pageName = match && match[1];
+
+    entry[pageName] = entryFile;
+
+    htmlWebpackPlugins.push(
+      new HTMLWebpackPlugin({
+        template: path.join(__dirname, `src/${pageName}/index.html`),
+        filename: `${pageName}.html`,
+        chunks: ["commons", pageName],
+        inject: true,
+        minify: {
+          html5: true,
+          collapseWhitespace: true,
+          preserveLineBreaks: false,
+          minifyCSS: true,
+          minifyJS: true,
+          removeComments: false
+        }
+      })
+    );
+  });
+  return { entry, htmlWebpackPlugins };
+};
+
+const { entry, htmlWebpackPlugins } = setMPA();
 
 module.exports = {
-  entry: {
-    index: "./src/index.js",
-    search: "./src/search.js"
-  },
+  entry: entry,
   output: {
     path: path.join(__dirname, "dist"),
     filename: "[name]_[chunkhash:8].js"
@@ -27,7 +62,28 @@ module.exports = {
       },
       {
         test: /.less$/,
-        use: [MiniCssExtractPlugin.loader, "css-loader", "less-loader"]
+        use: [
+          MiniCssExtractPlugin.loader,
+          "css-loader",
+          "less-loader",
+          {
+            loader: "postcss-loader",
+            options: {
+              plugins: () => [
+                require("autoprefixer")({
+                  browsers: ["last 2 version", ">1%", "ios 7"]
+                })
+              ]
+            }
+          },
+          {
+            loader: "px2rem-loader",
+            options: {
+              remUnit: 75,
+              remPrecesion: 8
+            }
+          }
+        ]
       },
       {
         test: /.(png|jpg|gif|jpeg|svg)$/,
@@ -54,40 +110,41 @@ module.exports = {
     ]
   },
   plugins: [
+    new CleanWebpackPlugin(),
     new MiniCssExtractPlugin({
       filename: "[name]_[contenthash:8].css"
     }),
     new OptimizeCssAssetsPlugin({
       assetNameRegExp: /\.css$/g,
       cssProcessor: require("cssnano")
-    }),
-    new HTMLWebpackPlugin({
-      template: path.join(__dirname, "src/search.html"),
-      filename: "search.html",
-      chunks: ["search"],
-      inject: true,
-      minify: {
-        html5: true,
-        collapseWhitespace: true,
-        preserveLineBreaks: false,
-        minifyCSS: true,
-        minifyJS: true,
-        removeComments: false
-      }
-    }),
-    new HTMLWebpackPlugin({
-      template: path.join(__dirname, "src/index.html"),
-      filename: "index.html",
-      chunks: ["index"],
-      inject: true,
-      minify: {
-        html5: true,
-        collapseWhitespace: true,
-        preserveLineBreaks: false,
-        minifyCSS: true,
-        minifyJS: true,
-        removeComments: false
-      }
     })
-  ]
+    // new HtmlWebpackExternalsPlugin({
+    //   externals: [
+    //     {
+    //       module: "react",
+    //       entry: "https://unpkg.com/react@16/umd/react.production.min.js",
+    //       global: "React"
+    //     },
+    //     {
+    //       module: "react-dom",
+    //       entry:
+    //         "https://unpkg.com/react-dom@16/umd/react-dom.production.min.js",
+    //       global: "ReactDOM"
+    //     }
+    //   ]
+    // })
+  ].concat(htmlWebpackPlugins),
+  optimization: {
+    splitChunks: {
+      minSize: 0,
+      cacheGroups: {
+        commons: {
+          // test: /(react|react-dom)/,
+          name: "commons",
+          chunks: "all",
+          minChunks: 2
+        }
+      }
+    }
+  }
 };
